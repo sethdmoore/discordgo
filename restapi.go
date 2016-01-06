@@ -111,6 +111,9 @@ func (s *Session) Login(email string, password string) (token string, err error)
 
 	var temp map[string]interface{}
 	err = json.Unmarshal(response, &temp)
+	if err != nil {
+		return
+	}
 	token = temp["token"].(string)
 	return
 }
