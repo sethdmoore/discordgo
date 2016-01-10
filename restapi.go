@@ -114,6 +114,7 @@ func (s *Session) Login(email string, password string) (token string, err error)
 	if err != nil {
 		return
 	}
+
 	token = temp["token"].(string)
 	return
 }

@@ -13,7 +13,10 @@ package discordgo
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -53,6 +56,9 @@ type Session struct {
 	OnGuildRoleUpdate         func(*Session, GuildRole)
 	OnGuildRoleDelete         func(*Session, GuildRoleDelete)
 	OnGuildIntegrationsUpdate func(*Session, GuildIntegrationsUpdate)
+	OnGuildBanAdd             func(*Session, GuildBan)
+	OnGuildBanRemove          func(*Session, GuildBan)
+	OnGuildEmojisUpdate       func(*Session, GuildEmojisUpdate)
 	OnUserSettingsUpdate      func(*Session, map[string]interface{}) // TODO: Find better way?
 
 	// Exposed but should not be modified by User.
@@ -80,6 +86,19 @@ type Session struct {
 	VChannelID string
 	Vop2       VoiceOP2
 	UDPConn    *net.UDPConn
+
+	// Managed state object, updated with events.
+	State        *State
+	StateEnabled bool
+
+	// Mutex/Bools for locks that prevent accidents.
+	// TODO: Add channels.
+
+	heartbeatLock sync.Mutex
+	heartbeatChan chan struct{}
+
+	listenLock sync.Mutex
+	listenChan chan struct{}
 }
 
 // A Message stores all data related to a specific Discord message.
@@ -95,6 +114,16 @@ type Message struct {
 	EditedTimestamp string       `json:"edited_timestamp"`
 	Mentions        []User       `json:"mentions"`
 	ChannelID       string       `json:"channel_id"`
+}
+
+// ContentWithMentionsReplaced will replace all @<id> mentions with the
+// username of the mention.
+func (m *Message) ContentWithMentionsReplaced() string {
+	content := m.Content
+	for _, user := range m.Mentions {
+		content = strings.Replace(content, fmt.Sprintf("<@%s>", user.ID), fmt.Sprintf("@%s", user.Username), -1)
+	}
+	return content
 }
 
 // An Attachment stores data for message attachments.
@@ -163,6 +192,14 @@ type PermissionOverwrite struct {
 	Allow int    `json:"allow"`
 }
 
+type Emoji struct {
+	Roles         []string `json:"roles"`
+	RequireColons bool     `json:"require_colons"`
+	Name          string   `json:"name"`
+	Managed       bool     `json:"managed"`
+	ID            string   `json:"id"`
+}
+
 // A Guild holds all data related to a specific Discord Guild.  Guilds are also
 // sometimes referred to as Servers in the Discord client.
 type Guild struct {
@@ -178,6 +215,7 @@ type Guild struct {
 	Large          bool         `json:"large"`     // ??
 	JoinedAt       string       `json:"joined_at"` // make this a timestamp
 	Roles          []Role       `json:"roles"`
+	Emojis         []Emoji      `json:"emojis"`
 	Members        []Member     `json:"members"`
 	Presences      []Presence   `json:"presences"`
 	Channels       []Channel    `json:"channels"`
@@ -248,14 +286,6 @@ type User struct {
 // it just doesn't seem able to handle this one
 // field correctly.  Need to research this more.
 
-// A PrivateChannel stores all data for a specific user private channel.
-type PrivateChannel struct {
-	ID            string `json:"id"`
-	IsPrivate     bool   `json:"is_private"`
-	LastMessageID string `json:"last_message_id"`
-	Recipient     User   `json:"recipient"`
-} // merge with channel?
-
 // A Settings stores data for a specific users Discord client settings.
 type Settings struct {
 	RenderEmbeds          bool     `json:"render_embeds"`
@@ -284,8 +314,8 @@ type Ready struct {
 	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
 	User              User          `json:"user"`
 	ReadState         []ReadState
-	PrivateChannels   []PrivateChannel
-	Guilds            []Guild
+	PrivateChannels   []Channel `json:"private_channels"`
+	Guilds            []Guild   `json:"guilds"`
 }
 
 // A ReadState stores data on the read state of channels.
@@ -339,4 +369,23 @@ type GuildRole struct {
 type GuildRoleDelete struct {
 	RoleID  string `json:"role_id"`
 	GuildID string `json:"guild_id"`
+}
+
+// A GuildBan stores data for a guild ban.
+type GuildBan struct {
+	User    User   `json:"user"`
+	GuildID string `json:"guild_id"`
+}
+
+// A GuildEmojisUpdate stores data for a guild emoji update event.
+type GuildEmojisUpdate struct {
+	GuildID string  `json:"guild_id"`
+	Emojis  []Emoji `json:"emojis"`
+}
+
+// A State contains the current known state.
+// As discord sends this in a READY blob, it seems reasonable to simply
+// use that struct as the data store.
+type State struct {
+	Ready
 }

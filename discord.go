@@ -16,7 +16,7 @@ package discordgo
 import "fmt"
 
 // DiscordGo Version, follows Symantic Versioning. (http://semver.org/)
-const VERSION = "0.7.0"
+const VERSION = "0.8.0"
 
 /*
 type Config struct {
@@ -61,7 +61,10 @@ type voiceUDP struct {
 func New(args ...interface{}) (s *Session, err error) {
 
 	// Create an empty Session interface.
-	s = &Session{}
+	s = &Session{
+		State:        NewState(),
+		StateEnabled: true,
+	}
 
 	// If no arguments are passed return the empty Session interface.
 	// Later I will add default values, if appropriate.
@@ -147,4 +150,18 @@ func New(args ...interface{}) (s *Session, err error) {
 	go s.Listen()
 
 	return
+}
+
+// Close closes a Discord session
+// TODO: Add support for Voice WS/UDP connections
+func (s *Session) Close() {
+
+	s.DataReady = false
+
+	close(s.listenChan)
+	close(s.heartbeatChan)
+
+	if s.wsConn != nil {
+		s.wsConn.Close()
+	}
 }
