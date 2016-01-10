@@ -108,6 +108,10 @@ func (s *Session) Login(email string, password string) (token string, err error)
 	}{email, password}
 
 	response, err := s.Request("POST", LOGIN, data)
+	// prevent login crash
+	if err != nil {
+		return response, err
+	}
 
 	var temp map[string]interface{}
 	err = json.Unmarshal(response, &temp)
